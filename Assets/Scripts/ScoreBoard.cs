@@ -2,7 +2,6 @@ using UnityEngine;
 using System;
 using System.Text;
 using System.Collections;
-using System.Globalization;
 using System.Collections.Generic;
 
 public class ScoreBoard : MonoBehaviour
@@ -39,7 +38,6 @@ public class ScoreBoard : MonoBehaviour
         public string name;
         public string score;
         public string date;
-        public string region;
     }
     [Serializable]
     private struct ReturnObject
@@ -219,11 +217,10 @@ public class ScoreBoard : MonoBehaviour
         }
 
         // JSON to Post
-        ScoreObject scoreObj = new ScoreObject();
+        var scoreObj = new ScoreObject();
         scoreObj.name = nameInput;
         scoreObj.score = score.ToString();
         scoreObj.date = DateTime.Now.ToString();
-        scoreObj.region = RegionInfo.CurrentRegion.EnglishName;
         string json = JsonUtility.ToJson(scoreObj);
         var formData = Encoding.UTF8.GetBytes(json);
 
