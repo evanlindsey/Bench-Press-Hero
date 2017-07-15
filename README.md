@@ -1,3 +1,3 @@
 # Bench Press Hero
 
-![Bench Press Hero](./screenshots/bph.gif)
+![Bench Press Hero](./Screenshots/bph.gif)
