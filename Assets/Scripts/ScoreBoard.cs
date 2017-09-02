@@ -22,13 +22,13 @@ public class ScoreBoard : MonoBehaviour
     // Hosting Environment (0 = Dev, 1 = Prod)
     public int environment = 1;
     // Score Service Endpoints
-    private const string maxScores = "";
-    private const string trialScores = "";
-    private const string combineScores = "";
+    private const string maxScores = "max";
+    private const string trialScores = "trial";
+    private const string combineScores = "combine";
     private const string queryString = @"?{""$sort"":{""score"":-1},""$limit"":100}";
     // Score Service URLs
-    private const string development = "";
-    private const string production = "";
+    private const string development = "http://localhost:1337/";
+    private const string production = "https://bench-press-hero.herokuapp.com/";
     private string[] services = new string[] { development, production };
     private string service;
 
