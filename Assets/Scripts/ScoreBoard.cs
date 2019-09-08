@@ -27,7 +27,7 @@ public class ScoreBoard : MonoBehaviour
     private const string combineScores = "combine";
     private const string queryString = @"?{""$sort"":{""score"":-1},""$limit"":100}";
     // Score Service URLs
-    private const string development = "http://localhost:1337/";
+    private const string development = "http://localhost:3000/";
     private const string production = "https://bench-press-hero.herokuapp.com/";
     private string[] services = new string[] { development, production };
     private string service;
