@@ -1,75 +1,84 @@
 ﻿using UnityEngine;
-using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 public class Menu : MonoBehaviour
 {
     private Music music;
     private ScoreBoard scoreBoard;
-    private GUITexture logo, trophy;
-
+    private Image logo, trophy;
     private bool extra, scores;
     private string audioText, trophyText;
+
     public bool Extra { get { return extra; } set { extra = value; } }
     public bool Scores { get { return scores; } set { scores = value; } }
     public string AudioText { get { return audioText; } set { audioText = value; } }
     public string TrophyText { get { return trophyText; } set { trophyText = value; } }
 
+    private const string NO_TROPHY_TXT = "NO\nWEIGHT\nMOVED!";
+    private const string SOUND_ON_TXT = "SOUND:\nON";
+    private const string SOUND_OFF_TXT = "SOUND:\nOFF";
 
-    void Awake()
+    void Start()
     {
-        if (GameObject.Find("Logo"))
-            logo = GameObject.Find("Logo").GetComponent<GUITexture>();
-
-        if (GameObject.Find("Trophy"))
+        var logoObj = GameObject.Find("Logo");
+        if (logoObj)
         {
-            trophy = GameObject.Find("Trophy").GetComponent<GUITexture>();
+            logo = logoObj.GetComponent<Image>();
+        }
+        else
+        {
+            Debug.LogError("Logo object not found!");
+        }
+
+        var trophyObj = GameObject.Find("Trophy");
+        if (trophyObj)
+        {
+            trophy = trophyObj.GetComponent<Image>();
             trophy.enabled = false;
         }
-
-        if (GameObject.Find("ScoreBoard"))
+        else
         {
-            scoreBoard = GameObject.Find("ScoreBoard").GetComponent<ScoreBoard>();
-            scoreBoard.enabled = false;
+            Debug.LogError("Trophy object not found!");
         }
 
-        music = GameObject.Find("_MUSIC").GetComponent<Music>();
-        SetMusic();
+        var scoreBoardObj = GameObject.Find("ScoreBoard");
+        if (scoreBoardObj)
+        {
+            scoreBoard = scoreBoardObj.GetComponent<ScoreBoard>();
+            scoreBoard.enabled = false;
+        }
+        else
+        {
+            Debug.LogError("ScoreBoard object not found!");
+        }
+
+        var musicObj = GameObject.Find("_MUSIC");
+        if (musicObj)
+        {
+            music = musicObj.GetComponent<Music>();
+            SetMusic();
+        }
+        else
+        {
+            Debug.LogError("Music object not found!");
+        }
     }
 
     private void SetTrophyText()
     {
-        if (PlayerPrefs.GetInt("Level") == 0)
+        if (Storage.LastLevel == 0)
         {
             trophy.enabled = false;
-            trophyText = "NO\nWEIGHT\nMOVED!";
+            trophyText = NO_TROPHY_TXT;
         }
         else
-            trophyText = Scale.lbs[PlayerPrefs.GetInt("Level") - 1] + " LB\n" + Scale.kgs[PlayerPrefs.GetInt("Level") - 1] + " KG";
-    }
-
-    private void SetMusic()
-    {
-        if (PlayerPrefs.GetInt("Music") == 0)
         {
-            audioText = "SOUND:\nOFF";
-            music.Pause = true;
-            AudioListener.volume = 0;
-        }
-        else if (PlayerPrefs.GetInt("Music") == 1)
-        {
-            audioText = "SOUND:\nON";
-            music.Pause = false;
-            AudioListener.volume = 1f;
+            var scaleIndex = Storage.LastLevel - 1;
+            trophyText = $"{Scale.lbs[scaleIndex]} LB\n {Scale.kgs[scaleIndex]} KG";
         }
     }
 
-    public void NewLevel(int number)
-    {
-        PlayerPrefs.SetInt("Active", number);
-        SceneManager.LoadScene("Level");
-    }
-
-    public void Trophy()
+    public void TrophyBtnPress()
     {
         if (extra)
         {
@@ -88,17 +97,37 @@ public class Menu : MonoBehaviour
         }
     }
 
-    public void Music()
+    private void SetMusic()
     {
-        if (PlayerPrefs.GetInt("Music") == 0)
-            PlayerPrefs.SetInt("Music", 1);
-        else if (PlayerPrefs.GetInt("Music") == 1)
-            PlayerPrefs.SetInt("Music", 0);
+        if (Storage.SoundOff)
+        {
+            audioText = SOUND_OFF_TXT;
+            music.Pause = true;
+            AudioListener.volume = 0;
+        }
+        else
+        {
+            audioText = SOUND_ON_TXT;
+            music.Pause = false;
+            AudioListener.volume = 1f;
+        }
+    }
+
+    public void MusicBtnPress()
+    {
+        if (Storage.SoundOff)
+        {
+            Storage.SoundOff = false;
+        }
+        else
+        {
+            Storage.SoundOff = true;
+        }
 
         SetMusic();
     }
 
-    public void HighScores()
+    public void ScoresBtnPress()
     {
         if (!scores)
         {

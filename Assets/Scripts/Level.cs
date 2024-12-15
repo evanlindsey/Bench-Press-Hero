@@ -1,17 +1,14 @@
-﻿using UnityEngine;
-using UnityEngine.SceneManagement;
+﻿using System;
+using UnityEngine;
 
 public class Level : MonoBehaviour
 {
     private Music music;
-
-    private string repText, timeText;
-    private float gameTimer, keepTimer;
-
     private int repCount;
-    private float timeRep;
-    private string boxText, centerText;
+    private float gameTimer, keepTimer, timeRep;
+    private string repText, timeText, boxText, centerText;
     private bool stop, move, lockout, leftAlign;
+
     public int RepCount { get { return repCount; } set { repCount = value; } }
     public float TimeRep { get { return timeRep; } set { timeRep = value; } }
     public string BoxText { get { return boxText; } set { boxText = value; } }
@@ -21,31 +18,73 @@ public class Level : MonoBehaviour
     public bool Lockout { get { return lockout; } set { lockout = value; } }
     public bool LeftAlign { get { return leftAlign; } set { leftAlign = value; } }
 
-    void Awake()
+    void Start()
     {
         stop = true;
         move = false;
         lockout = false;
         leftAlign = false;
 
-        music = GameObject.Find("_MUSIC").GetComponent<Music>();
+        var musicObj = GameObject.Find("_MUSIC");
+        if (musicObj)
+        {
+            music = musicObj.GetComponent<Music>();
+        }
+        else
+        {
+            Debug.LogError("Music object not found!");
+        }
     }
 
     void Update()
     {
-        if (PlayerPrefs.GetInt("Active") == 11)
+        var activeLevel = Storage.ActiveLevel;
+        if (activeLevel < 11)
+        {
+            {
+                if (stop)
+                {
+                    centerText = "TAP POWER\nWHEN READY";
+                }
+                else if (lockout)
+                {
+                    if (activeLevel == 10)
+                    {
+                        centerText = "WINNER!";
+                    }
+                    else
+                    {
+                        centerText = "LOCKOUT!";
+                    }
+                }
+                else
+                {
+                    centerText = "";
+                }
+
+                var scaleIndex = activeLevel - 1;
+                boxText = $"{Scale.lbs[scaleIndex]} / {Scale.kgs[scaleIndex]}";
+            }
+        }
+        else if (activeLevel == 11)
         {
             if (stop)
+            {
                 centerText = "HIT AS MANY\nREPS AS POSSIBLE";
+            }
             else
-                centerText = "REPS: " + repCount.ToString();
+            {
+                centerText = $"REPS: {repCount}";
+            }
 
-            if (repCount > PlayerPrefs.GetInt("CombineScore"))
-                PlayerPrefs.SetInt("CombineScore", repCount);
+            if (repCount > Storage.CombineScore)
+            {
+                Storage.CombineScore = repCount;
+            }
 
             boxText = "COMBINE";
         }
-        else if (PlayerPrefs.GetInt("Active") == 12)
+        else if (activeLevel == 12)
         {
             if (stop)
             {
@@ -67,59 +106,57 @@ public class Level : MonoBehaviour
                     keepTimer = gameTimer;
                     centerText = "GOAL!\n" + timeText;
 
-                    if (PlayerPrefs.GetFloat("TrialScore") == 0)
-                        PlayerPrefs.SetFloat("TrialScore", keepTimer);
-                    else if (gameTimer < PlayerPrefs.GetFloat("TrialScore"))
-                        PlayerPrefs.SetFloat("TrialScore", keepTimer);
+                    if (Storage.TrialScore == 0 || gameTimer < Storage.TrialScore)
+                    {
+                        Storage.TrialScore = (float)Math.Round(keepTimer, 4);
+                    }
                 }
 
                 if (gameTimer < 10)
-                    timeText = "0" + gameTimer.ToString("F3");
+                {
+                    timeText = "0" + gameTimer.ToString("F4");
+                }
                 else
-                    timeText = gameTimer.ToString("F3");
+                {
+                    timeText = gameTimer.ToString("F4");
+                }
 
                 repText = timeRep + " of 10";
             }
 
             boxText = repText;
         }
-        else
-        {
-            if (stop)
-                centerText = "TAP POWER\nWHEN READY";
-            else if (lockout)
-            {
-                if (PlayerPrefs.GetInt("Active") == 10)
-                    centerText = "WINNER!";
-                else
-                    centerText = "LOCKOUT!";
-            }
-            else
-                centerText = "";
 
-            boxText = Scale.lbs[PlayerPrefs.GetInt("Active") - 1] + " / " + Scale.kgs[PlayerPrefs.GetInt("Active") - 1];
-        }
     }
 
     public void MenuReturn()
     {
-        if (PlayerPrefs.GetInt("Music") == 1)
+        if (!Storage.SoundOff)
+        {
             music.Pause = false;
+        }
 
-        if (PlayerPrefs.GetInt("Active") == 11 || PlayerPrefs.GetInt("Active") == 12)
-            SceneManager.LoadScene("Menu");
+        var activeLevel = Storage.ActiveLevel;
+        if (activeLevel == 11 || activeLevel == 12)
+        {
+            Scene.LoadMenu();
+        }
         else
-            SceneManager.LoadScene("WeightSelect");
+        {
+            Scene.LoadWeightSelect();
+        }
     }
 
     public void Goal(int level)
     {
-        if (PlayerPrefs.GetInt("Level") < level && level != 12)
-            PlayerPrefs.SetInt("Level", level);
+        if (Storage.LastLevel < level && level != 12)
+        {
+            Storage.LastLevel = level;
+        }
 
         music.Pause = true;
         GetComponent<AudioSource>().Play();
 
-        Invoke("MenuReturn", 3f);
+        Invoke(nameof(MenuReturn), 3f);
     }
 }

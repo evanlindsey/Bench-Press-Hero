@@ -4,15 +4,22 @@ public class SensorChest : MonoBehaviour
 {
     private Level level;
 
-
-    void Awake()
+    void Start()
     {
-        level = GameObject.Find("Level").GetComponent<Level>();
+        var levelObj = GameObject.Find("Level");
+        if (levelObj)
+        {
+            level = levelObj.GetComponent<Level>();
+        }
+        else
+        {
+            Debug.LogError("Level object not found!");
+        }
     }
 
     void OnTriggerEnter2D(Collider2D c)
     {
-        if (c.gameObject.tag == "Barbell")
+        if (c.gameObject.CompareTag("Barbell"))
         {
             level.Lockout = false;
             level.Move = true;

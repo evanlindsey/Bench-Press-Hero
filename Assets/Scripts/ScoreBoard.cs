@@ -1,257 +1,262 @@
 using UnityEngine;
 using System;
-using System.Text;
-using System.Collections;
+using System.Threading.Tasks;
+using Unity.Services.Authentication;
+using Unity.Services.Leaderboards;
+using Unity.Services.Leaderboards.Models;
 using System.Collections.Generic;
 
 public class ScoreBoard : MonoBehaviour
 {
-    public GUISkin skin;
-    public GUIStyle style;
+    [SerializeField] private GUISkin skin;
+    [SerializeField] private GUIStyle style;
 
-    private ReturnObject returnObj;
     private Vector2 scrollPosition1, scrollPosition2, scrollPosition3;
-
     private float trialScore;
     private int maxScore, combineScore;
-    private bool showNameWindow, postingMax, postingCombine, postingTrial;
+    private bool hasNetworkConnection, showNameWindow, postingMax, postingCombine, postingTrial;
     private string maxTitle, combineTitle, trialTitle, postTitle, maxList, combineList, trialList, nameInput;
 
-    private const int nameLength = 15;
+    private const int NAME_LENGTH = 10;
+    private const string MAX_SCOREBOARD_ID = "max";
+    private const string COMBINE_SCOREBOARD_ID = "combine";
+    private const string TRIAL_SCOREBOARD_ID = "trial";
+    private const string NO_CNXN_TXT = "NO NETWORK CONNECTION";
+    private const string FETCHING_SCORES_TXT = "FETCHING SCORES";
+    private const string POSTING_SCORE_TXT = "POSTING SCORE";
+    private const string MAX_TITLE = "MAX OUT - TOP 100";
+    private const string COMBINE_TITLE = "COMBINE - TOP 100";
+    private const string TRIAL_TITLE = "TIME TRIAL - TOP 100";
 
-    // Hosting Environment (0 = Dev, 1 = Prod)
-    public int environment = 1;
-    // Score Service Endpoints
-    private const string maxScores = "max";
-    private const string trialScores = "trial";
-    private const string combineScores = "combine";
-    private const string queryString = @"?{""$sort"":{""score"":-1},""$limit"":100}";
-    // Score Service URLs
-    private const string development = "http://localhost:3000/";
-    private const string production = "https://bench-press-hero.herokuapp.com/";
-    private string[] services = new string[] { development, production };
-    private string service;
-
-    [Serializable]
-    private struct ScoreObject
+    private enum GameMode
     {
-        public string name;
-        public string score;
-        public string date;
-    }
-    [Serializable]
-    private struct ReturnObject
-    {
-        public ScoreObject[] scores;
+        Max,
+        Combine,
+        Trial
     }
 
-
-    void Start()
+    private string GetScoreBoardId(GameMode mode)
     {
-        service = services[environment];
+        return mode switch
+        {
+            GameMode.Max => MAX_SCOREBOARD_ID,
+            GameMode.Combine => COMBINE_SCOREBOARD_ID,
+            GameMode.Trial => TRIAL_SCOREBOARD_ID,
+            _ => "",
+        };
+    }
 
-        nameInput = "";
+    async void Awake()
+    {
+        hasNetworkConnection = Auth.CheckNetworkStatus();
 
-        // Get Scores
-        StartCoroutine(GetScoreMax(false));
-        StartCoroutine(GetScoreCombine(false));
-        StartCoroutine(GetScoreTrial(false));
+        if (hasNetworkConnection)
+        {
+            await Auth.SignInAnonymously();
 
-        // Scroll View Start Positions
-        scrollPosition1 = Vector2.zero;
-        scrollPosition2 = Vector2.zero;
-        scrollPosition3 = Vector2.zero;
+            // If Name Has Been Used, Fill Name Input
+            if (Storage.Username != "")
+            {
+                nameInput = Storage.Username;
+            }
+            else
+            {
+                nameInput = "";
+            }
 
-        // If Name Has Been Used, Fill Name Input
-        if (PlayerPrefs.GetString("Name") != "")
-            nameInput = PlayerPrefs.GetString("Name");
+            // Get Scores
+            await LoadBoards();
 
-        // Set Current High Score
-        trialScore = PlayerPrefs.GetFloat("TrialScore");
-        combineScore = PlayerPrefs.GetInt("CombineScore");
-        if (PlayerPrefs.GetInt("Level") > 0)
-            maxScore = Convert.ToInt32(Scale.lbs[PlayerPrefs.GetInt("Level") - 1]);
+            // Scroll View Start Positions
+            scrollPosition1 = Vector2.zero;
+            scrollPosition2 = Vector2.zero;
+            scrollPosition3 = Vector2.zero;
+
+            // Set Current High Scores
+            trialScore = Storage.TrialScore;
+            combineScore = Storage.CombineScore;
+            if (Storage.LastLevel > 0)
+            {
+                var levelIndex = Storage.LastLevel - 1;
+                maxScore = Convert.ToInt32(Scale.lbs[levelIndex]);
+            }
+            else
+            {
+                maxScore = 0;
+            }
+
+            // If No Previous Trial Score, Set Score at Limit
+            if (Storage.SavedTrial == 0)
+            {
+                Storage.SavedTrial = 100000;
+            }
+        }
         else
-            maxScore = 0;
-
-        // If No Previous Trial Score, Set Score at Limit
-        if (PlayerPrefs.GetFloat("LastTrial") == 0)
-            PlayerPrefs.SetFloat("LastTrial", 100000);
+        {
+            maxTitle = NO_CNXN_TXT;
+            combineTitle = NO_CNXN_TXT;
+            trialTitle = NO_CNXN_TXT;
+        }
     }
 
-    private IEnumerator GetScore(string board)
+    async Task LoadBoards()
     {
-        // Call Endpoint
-        var www = new WWW(service + board + queryString);
-        yield return www;
-
-        // JSON Return
-        string json = @"{ ""scores"": " + www.text + " }";
-        returnObj = JsonUtility.FromJson<ReturnObject>(json);
+        await Task.WhenAll(GetScore(GameMode.Max, false), GetScore(GameMode.Combine, false), GetScore(GameMode.Trial, false));
     }
 
-    // Get Score Coroutine
-    private IEnumerator GetScoreMax(bool posting)
+    private void DisplayScoreMax(List<LeaderboardEntry> results)
     {
-        // If not Called from Post Score
-        if (!posting)
-            maxTitle = "FETCHING SCORES";
-
-        // Fetch Scores
-        yield return StartCoroutine(GetScore(maxScores));
-
         // Clear String
         maxList = "";
 
         // Loop Through Return
         int i = 1;
-        foreach (var scoreObj in returnObj.scores)
+        foreach (var scoreObj in results)
         {
-            // Append Name
-            maxList += i + ". ";
-            maxList += scoreObj.name.ToUpper() + ": ";
-
             // Translate weight
-            int index = Array.IndexOf(Scale.lbs, scoreObj.score);
-            string weight = Scale.lbs[index] + "/" + Scale.kgs[index];
+            int index = Array.IndexOf(Scale.lbs, scoreObj.Score.ToString());
+            string weight = $"{Scale.lbs[index]}/{Scale.kgs[index]}";
 
-            // Append Score
-            maxList += weight + "\n";
+            // Append Name + Score
+            maxList += $"{i}. {scoreObj.PlayerName.ToUpper()}: {weight}\n";
 
             i++;
         }
 
         // Show Score Title
-        maxTitle = "MAX OUT - TOP 100";
+        maxTitle = MAX_TITLE;
     }
 
-    // Get Score Coroutine
-    private IEnumerator GetScoreCombine(bool posting)
+    private void DisplayScoreCombine(List<LeaderboardEntry> results)
     {
-        // If not Called from Post Score
-        if (!posting)
-            combineTitle = "FETCHING SCORES";
-
-        // Fetch Scores
-        yield return StartCoroutine(GetScore(combineScores));
-
         // Clear String
         combineList = "";
 
         // Loop Through Return
         int i = 1;
-        foreach (var scoreObj in returnObj.scores)
+        foreach (var scoreObj in results)
         {
-            // Append Name
-            combineList += i + ". ";
-            combineList += scoreObj.name.ToUpper() + ": ";
+            // Get Rep Text
+            string repTxt = "REP";
+            if (scoreObj.Score > 1)
+            {
+                repTxt += "S";
+            }
 
-            // Append Score
-            string rep = "REPS";
-            if (scoreObj.score == "1")
-                rep = "REP";
-            combineList += scoreObj.score + " " + rep + "\n";
+            // Append Name + Score
+            combineList += $"{i}. {scoreObj.PlayerName.ToUpper()}: {scoreObj.Score} {repTxt}\n";
 
             i++;
         }
 
         // Show Score Title
-        combineTitle = "COMBINE - TOP 100";
+        combineTitle = COMBINE_TITLE;
     }
 
-    // Get Score Coroutine
-    private IEnumerator GetScoreTrial(bool posting)
+    private void DisplayScoreTrial(List<LeaderboardEntry> results)
     {
-        // If not Called from Post Score
-        if (!posting)
-            trialTitle = "FETCHING SCORES";
-
-        // Fetch Scores
-        yield return StartCoroutine(GetScore(trialScores));
-
         // Clear String
         trialList = "";
 
         // Loop Through Return
         int i = 1;
-        foreach (var scoreObj in returnObj.scores)
+        foreach (var scoreObj in results)
         {
             // Append Name + Score
-            trialList += i + ". ";
-            trialList += scoreObj.name.ToUpper() + ": ";
-            trialList += scoreObj.score + "\n";
+            trialList += $"{i}. {scoreObj.PlayerName.ToUpper()}: {scoreObj.Score}\n";
 
             i++;
         }
 
         // Show Score Title
-        trialTitle = "TIME TRIAL - TOP 100";
+        trialTitle = TRIAL_TITLE;
     }
 
-    // Post Score Coroutine
-    private IEnumerator PostScore(string mode, float score)
+    private async Task GetScore(GameMode mode, bool posting)
     {
-        string setFloat = "";
-        float setScore = 0;
-        string board = "";
-        if (mode == "Max")
+        // If Not Posting, Set Fetching Title
+        if (!posting)
         {
-            maxTitle = "POSTING SCORE";
-            setFloat = "LastMax";
-            setScore = maxScore;
-            board = maxScores;
-        }
-        else if (mode == "Combine")
-        {
-            combineTitle = "POSTING SCORE";
-            setFloat = "LastCombine";
-            setScore = combineScore;
-            board = combineScores;
-        }
-        else if (mode == "Trial")
-        {
-            trialTitle = "POSTING SCORE";
-            setFloat = "LastTrial";
-            setScore = trialScore;
-            board = trialScores;
+            switch (mode)
+            {
+                case GameMode.Max:
+                    maxTitle = FETCHING_SCORES_TXT;
+                    break;
+                case GameMode.Combine:
+                    combineTitle = FETCHING_SCORES_TXT;
+                    break;
+                case GameMode.Trial:
+                    trialTitle = FETCHING_SCORES_TXT;
+                    break;
+            }
         }
 
-        // JSON to Post
-        var scoreObj = new ScoreObject();
-        scoreObj.name = nameInput;
-        scoreObj.score = score.ToString();
-        scoreObj.date = DateTime.Now.ToString();
-        string json = JsonUtility.ToJson(scoreObj);
-        var formData = Encoding.UTF8.GetBytes(json);
+        // Get Scores
+        var scoreBoardId = GetScoreBoardId(mode);
+        var returnObj = await LeaderboardsService.Instance.GetScoresAsync(scoreBoardId);
+
+        // Parse Output
+        switch (mode)
+        {
+            case GameMode.Max:
+                DisplayScoreMax(returnObj.Results);
+                break;
+            case GameMode.Combine:
+                DisplayScoreCombine(returnObj.Results);
+                break;
+            case GameMode.Trial:
+                DisplayScoreTrial(returnObj.Results);
+                break;
+        }
+    }
+
+    private async Task PostScore(GameMode mode)
+    {
+        // Save Name Input
+        Storage.Username = nameInput;
+        await AuthenticationService.Instance.UpdatePlayerNameAsync(nameInput);
+
+        double score = 0;
+        if (mode == GameMode.Max)
+        {
+            maxTitle = POSTING_SCORE_TXT;
+
+            // Save as Latest High Score
+            score = maxScore;
+            Storage.SavedMax = (int)score;
+        }
+        else if (mode == GameMode.Combine)
+        {
+            combineTitle = POSTING_SCORE_TXT;
+
+            // Save as Latest High Score
+            score = combineScore;
+            Storage.SavedCombine = (int)score;
+        }
+        else if (mode == GameMode.Trial)
+        {
+            trialTitle = POSTING_SCORE_TXT;
+
+            // Save as Latest High Score
+            score = trialScore;
+            Storage.SavedTrial = (float)score;
+        }
 
         // Post Score
-        var postHeader = new Dictionary<string, string>();
-        postHeader.Add("Content-Type", "application/json");
-        var www = new WWW(service + board, formData, postHeader);
-        yield return www;
+        var scoreBoardId = GetScoreBoardId(mode);
+        await LeaderboardsService.Instance.AddPlayerScoreAsync(scoreBoardId, score);
 
-        // Save Name Input
-        PlayerPrefs.SetString("Name", nameInput);
-
-        // Save as Latest High Score
-        PlayerPrefs.SetFloat(setFloat, setScore);
-
-        // Reload Board
-        if (mode == "Max")
-            StartCoroutine(GetScoreMax(true));
-        else if (mode == "Combine")
-            StartCoroutine(GetScoreCombine(true));
-        else if (mode == "Trial")
-            StartCoroutine(GetScoreTrial(true));
+        // Reload Boards
+        await LoadBoards();
     }
 
-    private void Post(string mode)
+    private void IsPosting(GameMode mode)
     {
-        if (mode == "Max")
+        if (mode == GameMode.Max)
         {
             if (!postingMax)
             {
-                postTitle = "MAX";
+                postTitle = MAX_SCOREBOARD_ID.ToUpper();
                 postingMax = true;
                 postingCombine = false;
                 postingTrial = false;
@@ -264,11 +269,11 @@ public class ScoreBoard : MonoBehaviour
                 showNameWindow = false;
             }
         }
-        else if (mode == "Combine")
+        else if (mode == GameMode.Combine)
         {
             if (!postingCombine)
             {
-                postTitle = "COMBINE";
+                postTitle = COMBINE_SCOREBOARD_ID.ToUpper();
                 postingMax = false;
                 postingCombine = true;
                 postingTrial = false;
@@ -281,11 +286,11 @@ public class ScoreBoard : MonoBehaviour
                 showNameWindow = false;
             }
         }
-        else if (mode == "Trial")
+        else if (mode == GameMode.Trial)
         {
             if (!postingTrial)
             {
-                postTitle = "TRIAL";
+                postTitle = TRIAL_SCOREBOARD_ID.ToUpper();
                 postingMax = false;
                 postingCombine = false;
                 postingTrial = true;
@@ -300,7 +305,6 @@ public class ScoreBoard : MonoBehaviour
         }
     }
 
-    // High Scores GUI
     void OnGUI()
     {
         // GUI Skin and Sizing
@@ -323,7 +327,7 @@ public class ScoreBoard : MonoBehaviour
             GUI.BringWindowToFront(4);
         }
 
-        // Combine Score Display
+        // Max Score Display
         GUI.Box(new Rect(0, Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), maxScore.ToString());
         // Combine Score Display
         GUI.Box(new Rect((Screen.width / 2) - (Screen.width / 6), Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), combineScore.ToString());
@@ -331,37 +335,55 @@ public class ScoreBoard : MonoBehaviour
         GUI.Box(new Rect(Screen.width / 1.5f, Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), trialScore.ToString());
 
         // Max Submit Button
-        if (maxScore > PlayerPrefs.GetFloat("LastMax") && maxScore > 0)
+        if (maxScore > Storage.SavedMax && maxScore > 0)
         {
             if (GUI.Button(new Rect(Screen.width / 6, Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), "POST"))
-                Post("Max");
+            {
+                IsPosting(GameMode.Max);
+            }
         }
         else if (maxScore == 0)
+        {
             GUI.Button(new Rect(Screen.width / 6, Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), "NO SCORE");
+        }
         else
+        {
             GUI.Button(new Rect(Screen.width / 6, Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), "POSTED!");
+        }
 
         // Combine Submit Button
-        if (combineScore > PlayerPrefs.GetFloat("LastCombine") && combineScore > 0)
+        if (combineScore > Storage.SavedCombine && combineScore > 0)
         {
             if (GUI.Button(new Rect(Screen.width / 2, Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), "POST"))
-                Post("Combine");
+            {
+                IsPosting(GameMode.Combine);
+            }
         }
         else if (combineScore == 0)
+        {
             GUI.Button(new Rect(Screen.width / 2, Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), "NO SCORE");
+        }
         else
+        {
             GUI.Button(new Rect(Screen.width / 2, Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), "POSTED!");
+        }
 
         // Trial Submit Button
-        if (trialScore < PlayerPrefs.GetFloat("LastTrial") && trialScore > 0)
+        if (trialScore < Storage.SavedTrial && trialScore > 0)
         {
             if (GUI.Button(new Rect(Screen.width - (Screen.width / 6), Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), "POST"))
-                Post("Trial");
+            {
+                IsPosting(GameMode.Trial);
+            }
         }
         else if (trialScore == 0)
+        {
             GUI.Button(new Rect(Screen.width - (Screen.width / 6), Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), "NO SCORE");
+        }
         else
+        {
             GUI.Button(new Rect(Screen.width - (Screen.width / 6), Screen.height / 1.76f, Screen.width / 6, Screen.height / 10), "POSTED!");
+        }
     }
 
     // Max Scores Window
@@ -407,7 +429,7 @@ public class ScoreBoard : MonoBehaviour
     }
 
     // Name Input Window
-    private void NameWindow(int windowID)
+    private async void NameWindow(int windowID)
     {
         // Winow Skin / Sizing
         GUI.skin = skin;
@@ -417,7 +439,7 @@ public class ScoreBoard : MonoBehaviour
 
         // Name Input Text Box
         GUI.SetNextControlName("Name_Input");
-        nameInput = GUI.TextField(new Rect(12, 25, Screen.width / 3.15f, Screen.height / 10), nameInput, nameLength);
+        nameInput = GUI.TextField(new Rect(12, 25, Screen.width / 3.15f, Screen.height / 10), nameInput, NAME_LENGTH);
 
         // Submit Button
         if (GUI.Button(new Rect(Screen.width / 3.08f, 25, Screen.width / 6, Screen.height / 10), "SUBMIT"))
@@ -428,17 +450,17 @@ public class ScoreBoard : MonoBehaviour
 
                 if (postingMax)
                 {
-                    StartCoroutine(PostScore("Max", maxScore));
+                    await PostScore(GameMode.Max);
                     postingMax = false;
                 }
                 else if (postingCombine)
                 {
-                    StartCoroutine(PostScore("Combine", combineScore));
+                    await PostScore(GameMode.Combine);
                     postingCombine = false;
                 }
                 else if (postingTrial)
                 {
-                    StartCoroutine(PostScore("Trial", trialScore));
+                    await PostScore(GameMode.Trial);
                     postingTrial = false;
                 }
             }

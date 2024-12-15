@@ -2,14 +2,12 @@
 
 public class Music : MonoBehaviour
 {
-    private static Music instance = null;
-    public static Music Instance { get { return instance; } }
-
     private AudioSource audioSource;
-
+    private static Music instance;
     private bool pause;
-    public bool Pause { get { return pause; } set { pause = value; } }
 
+    public static Music Instance { get { return instance; } }
+    public bool Pause { get { return pause; } set { pause = value; } }
 
     void Awake()
     {
@@ -21,7 +19,9 @@ public class Music : MonoBehaviour
             return;
         }
         else
+        {
             instance = this;
+        }
 
         DontDestroyOnLoad(gameObject);
     }
@@ -31,9 +31,13 @@ public class Music : MonoBehaviour
         if (!pause)
         {
             if (!audioSource.isPlaying)
+            {
                 audioSource.Play();
+            }
         }
         else
+        {
             audioSource.Pause();
+        }
     }
 }
